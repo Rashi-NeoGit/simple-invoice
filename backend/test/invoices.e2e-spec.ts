@@ -6,7 +6,7 @@ import request from 'supertest';
 import { DataSource, Repository } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
-import { Invoice } from '../src/invoices/invoice.entity';
+import { Invoice, InvoiceStatus } from '../src/invoices/invoice.entity';
 import { User } from '../src/users/user.entity';
 
 /**
@@ -221,6 +221,105 @@ describe('Invoices (e2e)', () => {
     expect(
       draftList.body.data.map((inv: { invoiceNumber: string }) => inv.invoiceNumber),
     ).not.toContain(invoiceNumber);
+  });
+
+  it('edits a Draft invoice, recomputing totals server-side', async () => {
+    const invoiceNumber = `${invoiceNumberPrefix}-edit`;
+    const createResponse = await request(app.getHttpServer())
+      .post('/invoices')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        customer: { fullname: 'Before Edit', email: 'before@example.com' },
+        item: { name: 'Original Item', quantity: 1, rate: 100 },
+        invoiceNumber,
+        invoiceDate: dateOffset(0),
+        dueDate: dateOffset(30),
+        currency: 'AUD',
+      })
+      .expect(201);
+
+    const invoiceId = createResponse.body.invoiceId;
+
+    const updateResponse = await request(app.getHttpServer())
+      .patch(`/invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        customer: { fullname: 'After Edit', email: 'after@example.com' },
+        item: { name: 'Updated Item', quantity: 2, rate: 75 },
+        invoiceNumber,
+        invoiceDate: dateOffset(0),
+        dueDate: dateOffset(30),
+        currency: 'AUD',
+        tax: 20,
+        discount: 10,
+      })
+      .expect(200);
+
+    // subTotal = 2*75=150, tax 20% = 30, discount 10 -> total 170
+    expect(updateResponse.body.invoiceSubTotal).toBe(150);
+    expect(updateResponse.body.totalTax).toBe(30);
+    expect(updateResponse.body.totalAmount).toBe(170);
+    expect(updateResponse.body.customer.fullname).toBe('After Edit');
+    expect(updateResponse.body.items[0].name).toBe('Updated Item');
+    expect(updateResponse.body.status).toBe('Draft');
+
+    const detailResponse = await request(app.getHttpServer())
+      .get(`/invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(detailResponse.body.totalAmount).toBe(170);
+  });
+
+  it('rejects editing a non-Draft invoice with 409 (no API endpoint changes status, so a Paid fixture is inserted directly)', async () => {
+    const invoiceNumber = `${invoiceNumberPrefix}-paid`;
+    const user = await userRepo.findOneOrFail({ where: { email: testUserEmail } });
+    const paidInvoice = invoiceRepo.create({
+      invoiceNumber,
+      invoiceDate: dateOffset(0),
+      dueDate: dateOffset(30),
+      currency: 'AUD',
+      currencySymbol: 'AU$',
+      status: InvoiceStatus.PAID,
+      invoiceSubTotal: 100,
+      totalTax: 10,
+      totalDiscount: 0,
+      totalAmount: 110,
+      totalPaid: 110,
+      balanceAmount: 0,
+      customerFullname: 'Paid Customer',
+      customerEmail: 'paid@example.com',
+      createdBy: user.id,
+      items: [{ name: 'Item', quantity: 1, rate: 100 }] as never,
+    });
+    const saved = await invoiceRepo.save(paidInvoice);
+
+    await request(app.getHttpServer())
+      .patch(`/invoices/${saved.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        customer: { fullname: 'Should Not Apply', email: 'x@example.com' },
+        item: { name: 'X', quantity: 1, rate: 1 },
+        invoiceNumber,
+        invoiceDate: dateOffset(0),
+        dueDate: dateOffset(30),
+        currency: 'AUD',
+      })
+      .expect(409);
+  });
+
+  it('rejects editing a non-existent invoice with 404', async () => {
+    await request(app.getHttpServer())
+      .patch('/invoices/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        customer: { fullname: 'X', email: 'x@example.com' },
+        item: { name: 'X', quantity: 1, rate: 1 },
+        invoiceNumber: `${invoiceNumberPrefix}-nope`,
+        invoiceDate: dateOffset(0),
+        dueDate: dateOffset(30),
+        currency: 'AUD',
+      })
+      .expect(404);
   });
 
   it('returns a 404 in the spec-documented shape for a non-existent invoice', async () => {

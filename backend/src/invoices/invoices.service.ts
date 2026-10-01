@@ -31,6 +31,53 @@ export class InvoicesService {
   ) {}
 
   async create(dto: CreateInvoiceDto, userId: string): Promise<InvoiceResponse> {
+    const invoiceItem = new InvoiceItem();
+    invoiceItem.name = dto.item.name;
+    invoiceItem.quantity = dto.item.quantity;
+    invoiceItem.rate = dto.item.rate;
+
+    const invoice = this.invoiceRepository.create({
+      ...this.computeInvoiceFields(dto, 0),
+      status: InvoiceStatus.DRAFT,
+      totalPaid: 0,
+      createdBy: userId,
+      items: [invoiceItem],
+    });
+
+    return this.saveAndRespond(invoice);
+  }
+
+  /**
+   * Edits an existing invoice's fields (not its status/lifecycle). Only ever allowed
+   * while the invoice is still Draft — editing a Pending/Paid invoice is a genuine
+   * 409 Conflict (the request conflicts with the resource's current state), distinct
+   * from the other 409 case (duplicate invoice number).
+   */
+  async update(id: string, dto: CreateInvoiceDto): Promise<InvoiceResponse> {
+    const invoice = await this.invoiceRepository.findOne({ where: { id }, relations: ['items'] });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    if (invoice.status !== InvoiceStatus.DRAFT) {
+      throw new ConflictException('Only Draft invoices can be edited');
+    }
+
+    Object.assign(invoice, this.computeInvoiceFields(dto, invoice.totalPaid));
+
+    const [item] = invoice.items;
+    item.name = dto.item.name;
+    item.quantity = dto.item.quantity;
+    item.rate = dto.item.rate;
+
+    return this.saveAndRespond(invoice);
+  }
+
+  /**
+   * Every field create/update actually write, computed once in one place. Create and
+   * update used to each carry their own copy of this ~15-line block — a single source
+   * means a newly-editable field only ever needs adding here, not in both methods.
+   */
+  private computeInvoiceFields(dto: CreateInvoiceDto, totalPaid: number) {
     const tax = dto.tax ?? DEFAULT_TAX_PERCENT;
     const discount = dto.discount ?? DEFAULT_DISCOUNT;
     const { subTotal, taxAmount, totalAmount } = calculateInvoiceTotals(
@@ -40,12 +87,7 @@ export class InvoicesService {
       discount,
     );
 
-    const invoiceItem = new InvoiceItem();
-    invoiceItem.name = dto.item.name;
-    invoiceItem.quantity = dto.item.quantity;
-    invoiceItem.rate = dto.item.rate;
-
-    const invoice = this.invoiceRepository.create({
+    return {
       invoiceNumber: dto.invoiceNumber,
       invoiceReference: dto.invoiceReference,
       invoiceDate: dto.invoiceDate,
@@ -57,17 +99,16 @@ export class InvoicesService {
       totalTax: taxAmount,
       totalDiscount: discount,
       totalAmount,
-      balanceAmount: calculateBalance(totalAmount, 0),
+      balanceAmount: calculateBalance(totalAmount, totalPaid),
       customerFullname: dto.customer.fullname,
       customerEmail: dto.customer.email,
       customerMobile: dto.customer.mobileNumber,
       customerAddress: dto.customer.address,
-      status: InvoiceStatus.DRAFT,
-      totalPaid: 0,
-      createdBy: userId,
-      items: [invoiceItem],
-    });
+    };
+  }
 
+  /** Postgres unique_violation on save is the only place this API returns 409 for either create or update. */
+  private async saveAndRespond(invoice: Invoice): Promise<InvoiceResponse> {
     try {
       const saved = await this.invoiceRepository.save(invoice);
       return toInvoiceResponse(saved);

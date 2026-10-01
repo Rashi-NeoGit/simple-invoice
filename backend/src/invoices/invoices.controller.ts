@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -56,5 +57,18 @@ export class InvoicesController {
   @ApiResponse({ status: 409, description: 'Invoice number already exists' })
   create(@Body() dto: CreateInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
     return this.invoicesService.create(dto, user.id);
+  }
+
+  @Patch(':id')
+  @ApiBody({ type: CreateInvoiceDto })
+  @ApiResponse({ status: 200, description: 'Invoice updated (Draft invoices only)' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 404, description: 'Invoice not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Invoice is not Draft, or the new invoice number already exists',
+  })
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateInvoiceDto) {
+    return this.invoicesService.update(id, dto);
   }
 }

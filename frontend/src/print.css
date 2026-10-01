@@ -2,4 +2,36 @@
   .no-print {
     display: none !important;
   }
+
+  @page {
+    margin: 1.5cm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* The app shell wraps every page in a grey background Box — flatten it for print
+     so only the invoice card's own white background shows. */
+  #root > div {
+    background: #fff !important;
+  }
+
+  .print-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    /* Keeps the invoice together on one page rather than splitting mid-table
+       across a page break if it ever grows past a single line item. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   Box,
   Card,
@@ -17,6 +18,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { Invoice, PagingInfo, SortField, SortOrder } from '../../types/invoice';
+import { formatAmount } from '../../utils/formatAmount';
 import { StatusBadge } from './StatusBadge';
 
 interface InvoiceTableProps {
@@ -37,14 +39,10 @@ const SORTABLE_COLUMNS: Array<{ field: SortField; label: string }> = [
   { field: 'totalAmount', label: 'Total Amount' },
 ];
 
-function formatAmount(amount: number, currencySymbol: string): string {
-  return `${currencySymbol}${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-export function InvoiceTable({
+// Memoized: with stable callback props from the parent (see InvoiceListPage's
+// useCallback-wrapped handlers), this skips re-rendering up to 100 rows on every
+// keystroke in the search box — only an actual data/sort/paging change re-renders it.
+function InvoiceTableComponent({
   invoices,
   paging,
   isLoading,
@@ -180,3 +178,5 @@ export function InvoiceTable({
     </TableContainer>
   );
 }
+
+export const InvoiceTable = memo(InvoiceTableComponent);

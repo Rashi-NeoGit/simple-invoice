@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { MenuItem, Stack, TextField } from '@mui/material';
 import { InvoiceStatus } from '../../types/invoice';
 
@@ -15,7 +16,9 @@ interface InvoiceFiltersProps {
   onChange: (value: InvoiceFiltersValue) => void;
 }
 
-export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
+// Memoized so it doesn't re-render just because sibling table data refreshed while
+// the filter values themselves (and the parent's onChange, now stable) didn't change.
+function InvoiceFiltersComponent({ value, onChange }: InvoiceFiltersProps) {
   return (
     <Stack
       direction={{ xs: 'column', sm: 'row' }}
@@ -65,3 +68,5 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
     </Stack>
   );
 }
+
+export const InvoiceFilters = memo(InvoiceFiltersComponent);

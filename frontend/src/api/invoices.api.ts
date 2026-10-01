@@ -25,3 +25,8 @@ export interface CreateInvoicePayload {
 export function createInvoice(payload: CreateInvoicePayload): Promise<Invoice> {
   return apiClient.post<Invoice>('/invoices', payload).then((res) => res.data);
 }
+
+/** Only allowed by the backend while the invoice is still Draft — see InvoicesService.update. */
+export function updateInvoice(id: string, payload: CreateInvoicePayload): Promise<Invoice> {
+  return apiClient.patch<Invoice>(`/invoices/${id}`, payload).then((res) => res.data);
+}

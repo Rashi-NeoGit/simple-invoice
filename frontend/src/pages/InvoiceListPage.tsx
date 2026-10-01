@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Button, Container, Stack, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -32,24 +32,36 @@ export function InvoiceListPage() {
 
   const debouncedKeyword = useDebouncedValue(keyword, 400);
 
-  const filtersValue: InvoiceFiltersValue = {
-    keyword,
-    status: status as InvoiceStatus | '',
-    fromDate,
-    toDate,
-  };
+  const filtersValue: InvoiceFiltersValue = useMemo(
+    () => ({ keyword, status: status as InvoiceStatus | '', fromDate, toDate }),
+    [keyword, status, fromDate, toDate],
+  );
 
-  function updateParams(updates: Record<string, string | number | undefined>) {
-    const next = new URLSearchParams(searchParams);
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value === undefined || value === '') {
-        next.delete(key);
-      } else {
-        next.set(key, String(value));
-      }
-    });
-    setSearchParams(next, { replace: true });
-  }
+  // Uses the functional form of setSearchParams (reading the latest params from React
+  // Router itself, not from this render's closure) so this function never needs to
+  // change identity — every callback built from it below stays referentially stable
+  // across renders, letting InvoiceTable's React.memo actually skip re-rendering (up
+  // to 100 rows) on every keystroke in the search box instead of just on real data/sort
+  // changes.
+  const updateParams = useCallback(
+    (updates: Record<string, string | number | undefined>) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          Object.entries(updates).forEach(([key, value]) => {
+            if (value === undefined || value === '') {
+              next.delete(key);
+            } else {
+              next.set(key, String(value));
+            }
+          });
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const query = useMemo(
     () => ({
@@ -67,23 +79,43 @@ export function InvoiceListPage() {
 
   const { data: invoices, paging, isLoading, error } = useInvoices(query);
 
-  const handleFiltersChange = (next: InvoiceFiltersValue) => {
-    updateParams({
-      keyword: next.keyword,
-      status: next.status,
-      fromDate: next.fromDate,
-      toDate: next.toDate,
-      page: 1,
-    });
-  };
+  const handleFiltersChange = useCallback(
+    (next: InvoiceFiltersValue) => {
+      updateParams({
+        keyword: next.keyword,
+        status: next.status,
+        fromDate: next.fromDate,
+        toDate: next.toDate,
+        page: 1,
+      });
+    },
+    [updateParams],
+  );
 
-  const handleSortChange = (field: SortField) => {
-    if (sortBy === field) {
-      updateParams({ ordering: ordering === 'ASC' ? 'DESC' : 'ASC' });
-    } else {
-      updateParams({ sortBy: field, ordering: 'ASC' });
-    }
-  };
+  const handleSortChange = useCallback(
+    (field: SortField) => {
+      if (sortBy === field) {
+        updateParams({ ordering: ordering === 'ASC' ? 'DESC' : 'ASC' });
+      } else {
+        updateParams({ sortBy: field, ordering: 'ASC' });
+      }
+    },
+    [sortBy, ordering, updateParams],
+  );
+
+  const handlePageChange = useCallback(
+    (nextPage: number) => updateParams({ page: nextPage }),
+    [updateParams],
+  );
+
+  const handlePageSizeChange = useCallback(
+    (nextSize: number) => updateParams({ pageSize: nextSize, page: 1 }),
+    [updateParams],
+  );
+
+  const handleRowClick = useCallback((id: string) => navigate(`/invoices/${id}`), [navigate]);
+
+  const handleCreateClick = useCallback(() => navigate('/invoices/new'), [navigate]);
 
   return (
     <AppLayout>
@@ -99,11 +131,7 @@ export function InvoiceListPage() {
           <Typography variant="h4" component="h1">
             Invoices
           </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => navigate('/invoices/new')}
-          >
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateClick}>
             New Invoice
           </Button>
         </Stack>
@@ -123,9 +151,9 @@ export function InvoiceListPage() {
           sortBy={sortBy}
           ordering={ordering}
           onSortChange={handleSortChange}
-          onPageChange={(nextPage) => updateParams({ page: nextPage })}
-          onPageSizeChange={(nextSize) => updateParams({ pageSize: nextSize, page: 1 })}
-          onRowClick={(id) => navigate(`/invoices/${id}`)}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+          onRowClick={handleRowClick}
         />
       </Container>
     </AppLayout>

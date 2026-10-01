@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import * as invoicesApi from '../api/invoices.api';
 import { AuthProvider } from '../auth/AuthContext';
@@ -39,6 +40,7 @@ function renderPage() {
     <MemoryRouter initialEntries={['/invoices/inv-1']}>
       <AuthProvider>
         <Routes>
+          <Route path="/invoices/:id/edit" element={<div>Edit Invoice Page</div>} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
           <Route path="/invoices" element={<div>Invoice List Page</div>} />
         </Routes>
@@ -83,5 +85,27 @@ describe('InvoiceDetailPage', () => {
 
     expect(await screen.findByText(/could not load this invoice/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /back to invoices/i })).toBeInTheDocument();
+  });
+
+  it('does not show an Edit button for a non-Draft invoice', async () => {
+    (invoicesApi.fetchInvoice as jest.Mock).mockResolvedValue(SAMPLE_INVOICE); // status: Pending
+    renderPage();
+
+    await screen.findByText('IV-1001');
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+  });
+
+  it('shows an Edit button for a Draft invoice and navigates to the edit page', async () => {
+    (invoicesApi.fetchInvoice as jest.Mock).mockResolvedValue({
+      ...SAMPLE_INVOICE,
+      status: 'Draft',
+    });
+    renderPage();
+    const user = userEvent.setup();
+
+    await screen.findByText('IV-1001');
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+    expect(await screen.findByText('Edit Invoice Page')).toBeInTheDocument();
   });
 });

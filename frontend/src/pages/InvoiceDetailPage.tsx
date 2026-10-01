@@ -18,18 +18,13 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
 import PrintIcon from '@mui/icons-material/Print';
 import { AppLayout } from '../components/layout/AppLayout';
 import { StatusBadge } from '../components/invoices/StatusBadge';
 import { fetchInvoice } from '../api/invoices.api';
 import { Invoice } from '../types/invoice';
-
-function formatAmount(amount: number, currencySymbol: string): string {
-  return `${currencySymbol}${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+import { formatAmount } from '../utils/formatAmount';
 
 export function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -79,7 +74,7 @@ export function InvoiceDetailPage() {
 
   return (
     <AppLayout>
-      <Container maxWidth="md" sx={{ py: 4 }}>
+      <Container maxWidth="md" sx={{ py: 4 }} className="print-container">
         <Stack
           direction="row"
           justifyContent="space-between"
@@ -90,12 +85,24 @@ export function InvoiceDetailPage() {
           <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/invoices')}>
             Back to invoices
           </Button>
-          <Button startIcon={<PrintIcon />} variant="outlined" onClick={() => window.print()}>
-            Print Invoice
-          </Button>
+          <Stack direction="row" spacing={1}>
+            {/* Only Draft invoices are editable — enforced again server-side, this is just the UI entry point. */}
+            {invoice.status === 'Draft' && (
+              <Button
+                startIcon={<EditIcon />}
+                variant="outlined"
+                onClick={() => navigate(`/invoices/${invoice.invoiceId}/edit`)}
+              >
+                Edit
+              </Button>
+            )}
+            <Button startIcon={<PrintIcon />} variant="outlined" onClick={() => window.print()}>
+              Print Invoice
+            </Button>
+          </Stack>
         </Stack>
 
-        <Card>
+        <Card className="print-area">
           <CardContent>
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
               <Box>

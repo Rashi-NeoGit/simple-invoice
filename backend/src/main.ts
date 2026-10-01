@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import compression from 'compression';
+import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -9,6 +11,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.use(helmet());
+  app.use(compression());
   app.enableCors();
 
   // Applied app-wide (not just /invoices) so every endpoint gets the same

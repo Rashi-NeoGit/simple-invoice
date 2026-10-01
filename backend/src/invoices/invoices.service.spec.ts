@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { Invoice, InvoiceStatus } from './invoice.entity';
 import { InvoicesService } from './invoices.service';
@@ -96,6 +96,67 @@ function buildDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     ...overrides,
   } as Invoice;
 }
+
+describe('InvoicesService.update', () => {
+  it('throws NotFoundException when the invoice does not exist', async () => {
+    const repo = { findOne: jest.fn().mockResolvedValue(null) };
+    const service = new InvoicesService(repo as any, {} as any);
+
+    await expect(service.update('missing-id', buildDto())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('throws ConflictException (409) when the invoice is not Draft', async () => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(buildDraftInvoice({ status: InvoiceStatus.PAID })),
+    };
+    const service = new InvoicesService(repo as any, {} as any);
+
+    await expect(service.update('invoice-1', buildDto())).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('recomputes totals and overwrites customer/item/invoice fields for a Draft invoice', async () => {
+    const existing = buildDraftInvoice();
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      save: jest.fn(async (entity) => entity),
+    };
+    const service = new InvoicesService(repo as any, {} as any);
+
+    const result = await service.update(
+      'invoice-1',
+      buildDto({
+        customer: { fullname: 'New Customer', email: 'new@example.com' },
+        item: { name: 'New Item', quantity: 3, rate: 50 },
+        invoiceNumber: 'IV-UPDATED-001',
+        tax: 20,
+        discount: 5,
+      }),
+    );
+
+    // subTotal = 3*50=150, tax 20% = 30, discount 5 -> total 175
+    expect(result.invoiceNumber).toBe('IV-UPDATED-001');
+    expect(result.invoiceSubTotal).toBe(150);
+    expect(result.totalTax).toBe(30);
+    expect(result.totalDiscount).toBe(5);
+    expect(result.totalAmount).toBe(175);
+    expect(result.balanceAmount).toBe(175);
+    expect(result.customer).toMatchObject({ fullname: 'New Customer', email: 'new@example.com' });
+    expect(result.items[0]).toMatchObject({ name: 'New Item', quantity: 3, rate: 50 });
+    expect(result.status).toBe(InvoiceStatus.DRAFT);
+  });
+
+  it('throws ConflictException (409) when the new invoice number collides with another invoice', async () => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(buildDraftInvoice()),
+      save: jest.fn().mockRejectedValue({ code: '23505' }),
+    };
+    const service = new InvoicesService(repo as any, {} as any);
+
+    await expect(service.update('invoice-1', buildDto())).rejects.toBeInstanceOf(ConflictException);
+  });
+});
 
 function buildQueryBuilderMock(rows: Invoice[], total: number) {
   return {
